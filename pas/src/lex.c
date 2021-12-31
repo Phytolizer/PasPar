@@ -50,6 +50,7 @@ static void CleanupKeywords(LexerKeyword* keywords);
 static bool IsIdentifierStart(char c);
 static bool IsDigit(char c);
 static bool IsSign(char c);
+static bool IsWhiteSpace(char c);
 static bool IsIdentifierPart(char c);
 
 PasTokens PasLex(String text) {
@@ -115,215 +116,211 @@ PasTokens PasLex(String text) {
         .column = lexer.column,
         .position = lexer.position,
     };
-    // loop will handle comments and whitespace
-    while (token.type == kPasTokenTypeZero) {
-      token.position = lexer.position;
-      if (IsIdentifierStart(LEXER_CUR(&lexer))) {
-        while (IsIdentifierPart(LEXER_CUR(&lexer))) {
-          LEXER_NEXT(&lexer);
-        }
-        token.type = kPasTokenTypeIdent;
-        token.text = LexerText(&lexer, &token);
-        String lookup_text = StringDuplicate(&token.text);
-        StringDowncase(&lookup_text);
-        VEC_PUSH(&lookup_text, '\0');
-        LexerKeyword* kw;
-        HASH_FIND_STR(keywords, lookup_text.data, kw);
-        VEC_FREE(&lookup_text);
-        if (kw != NULL) {
-          token.type = kw->type;
-        }
-      } else if (IsDigit(LEXER_CUR(&lexer))) {
+    if (IsIdentifierStart(LEXER_CUR(&lexer))) {
+      while (IsIdentifierPart(LEXER_CUR(&lexer))) {
+        LEXER_NEXT(&lexer);
+      }
+      token.type = kPasTokenTypeIdent;
+      token.text = LexerText(&lexer, &token);
+      String lookup_text = StringDuplicate(&token.text);
+      StringDowncase(&lookup_text);
+      VEC_PUSH(&lookup_text, '\0');
+      LexerKeyword* kw;
+      HASH_FIND_STR(keywords, lookup_text.data, kw);
+      VEC_FREE(&lookup_text);
+      if (kw != NULL) {
+        token.type = kw->type;
+      }
+    } else if (IsDigit(LEXER_CUR(&lexer))) {
+      while (IsDigit(LEXER_CUR(&lexer))) {
+        LEXER_NEXT(&lexer);
+      }
+      if (LEXER_CUR(&lexer) == '.') {
+        LEXER_NEXT(&lexer);
         while (IsDigit(LEXER_CUR(&lexer))) {
           LEXER_NEXT(&lexer);
         }
-        if (LEXER_CUR(&lexer) == '.') {
-          LEXER_NEXT(&lexer);
-          while (IsDigit(LEXER_CUR(&lexer))) {
-            LEXER_NEXT(&lexer);
-          }
-          LexExponent(&lexer);
-          token.type = kPasTokenTypeNumReal;
-        } else if (LEXER_CUR(&lexer) == 'e') {
-          LexExponent(&lexer);
-          token.type = kPasTokenTypeNumReal;
-        } else {
-          token.type = kPasTokenTypeNumInt;
-        }
-        token.text = LexerText(&lexer, &token);
+        LexExponent(&lexer);
+        token.type = kPasTokenTypeNumReal;
+      } else if (LEXER_CUR(&lexer) == 'e') {
+        LexExponent(&lexer);
+        token.type = kPasTokenTypeNumReal;
       } else {
-        switch (LEXER_CUR(&lexer)) {
-          case '{': {
-            bool found = false;
-            for (uint64_t i = 0;
-                 LEXER_LOOK(&lexer, i) != '\n' && LEXER_LOOK(&lexer, i) != '\0';
-                 ++i) {
-              if (LEXER_LOOK(&lexer, i) == '}') {
-                for (uint64_t j = 0; j <= i; ++j) {
-                  LEXER_NEXT(&lexer);
-                }
-                found = true;
-                break;
-              }
-            }
-            if (found) {
-              token.type = kPasTokenTypeComment1;
-            } else {
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeLCurly;
-            }
-            token.text = LexerText(&lexer, &token);
-          } break;
-          case '}':
-            token.type = kPasTokenTypeRCurly;
-            token.text = LexerText(&lexer, &token);
-            LEXER_NEXT(&lexer);
-            break;
-          case '(':
-            if (LEXER_PEEK(&lexer) == '*') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              while (LEXER_CUR(&lexer) != '*' || LEXER_PEEK(&lexer) != ')') {
-                if (LEXER_PEEK(&lexer) == '\0') {
-                  break;
-                }
+        token.type = kPasTokenTypeNumInt;
+      }
+      token.text = LexerText(&lexer, &token);
+    } else if (IsWhiteSpace(LEXER_CUR(&lexer))) {
+      while (IsWhiteSpace(LEXER_CUR(&lexer))) {
+        LEXER_NEXT(&lexer);
+      }
+      token.type = kPasTokenTypeWs;
+      token.text = LexerText(&lexer, &token);
+    } else {
+      switch (LEXER_CUR(&lexer)) {
+        case '{': {
+          bool found = false;
+          for (uint64_t i = 0;
+               LEXER_LOOK(&lexer, i) != '\n' && LEXER_LOOK(&lexer, i) != '\0';
+               ++i) {
+            if (LEXER_LOOK(&lexer, i) == '}') {
+              for (uint64_t j = 0; j <= i; ++j) {
                 LEXER_NEXT(&lexer);
               }
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-            } else if (LEXER_PEEK(&lexer) == '.') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeLBracket2;
-              token.text = LexerText(&lexer, &token);
-            } else {
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeLParen;
-              token.text = LexerText(&lexer, &token);
+              found = true;
+              break;
             }
-            break;
-          case ' ':
-          case '\t':
-          case '\r':
-          case '\n':
+          }
+          if (found) {
+            token.type = kPasTokenTypeComment1;
+          } else {
             LEXER_NEXT(&lexer);
-            break;
-          case '.':
-            if (LEXER_PEEK(&lexer) == '.') {
+            token.type = kPasTokenTypeLCurly;
+          }
+          token.text = LexerText(&lexer, &token);
+        } break;
+        case '}':
+          token.type = kPasTokenTypeRCurly;
+          token.text = LexerText(&lexer, &token);
+          LEXER_NEXT(&lexer);
+          break;
+        case '(':
+          if (LEXER_PEEK(&lexer) == '*') {
+            LEXER_NEXT(&lexer);
+            LEXER_NEXT(&lexer);
+            while (LEXER_CUR(&lexer) != '*' || LEXER_PEEK(&lexer) != ')') {
+              if (LEXER_PEEK(&lexer) == '\0') {
+                break;
+              }
               LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeDotDot;
-            } else if (LEXER_PEEK(&lexer) == ')') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeRBracket2;
-            } else {
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeDot;
             }
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '@':
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeAt;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '^':
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypePointer;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '[':
+            token.type = kPasTokenTypeComment2;
+          } else if (LEXER_PEEK(&lexer) == '.') {
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeLBracket;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case ']':
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeRBracket;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case ')':
+            token.type = kPasTokenTypeLBracket2;
+          } else {
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeRParen;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '>':
-            if (LEXER_PEEK(&lexer) == '=') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeGe;
-            } else {
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeGt;
-            }
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '<':
-            if (LEXER_PEEK(&lexer) == '=') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeLe;
-            } else if (LEXER_PEEK(&lexer) == '>') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeNotEqual;
-            } else {
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeLt;
-            }
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '=':
+            token.type = kPasTokenTypeLParen;
+          }
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '.':
+          if (LEXER_PEEK(&lexer) == '.') {
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeEqual;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case ':':
-            if (LEXER_PEEK(&lexer) == '=') {
-              LEXER_NEXT(&lexer);
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeAssign;
-            } else {
-              LEXER_NEXT(&lexer);
-              token.type = kPasTokenTypeColon;
-            }
-            token.text = LexerText(&lexer, &token);
-            break;
-          case ';':
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeSemi;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case ',':
+            token.type = kPasTokenTypeDotDot;
+          } else if (LEXER_PEEK(&lexer) == ')') {
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeComma;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '/':
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeSlash;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '*':
+            token.type = kPasTokenTypeRBracket2;
+          } else {
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeStar;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '+':
+            token.type = kPasTokenTypeDot;
+          }
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '@':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeAt;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '^':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypePointer;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '[':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeLBracket;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case ']':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeRBracket;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case ')':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeRParen;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '>':
+          if (LEXER_PEEK(&lexer) == '=') {
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypePlus;
-            token.text = LexerText(&lexer, &token);
-            break;
-          case '-':
             LEXER_NEXT(&lexer);
-            token.type = kPasTokenTypeMinus;
-            token.text = LexerText(&lexer, &token);
-            break;
-          default:
+            token.type = kPasTokenTypeGe;
+          } else {
             LEXER_NEXT(&lexer);
-            break;
-        }
+            token.type = kPasTokenTypeGt;
+          }
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '<':
+          if (LEXER_PEEK(&lexer) == '=') {
+            LEXER_NEXT(&lexer);
+            LEXER_NEXT(&lexer);
+            token.type = kPasTokenTypeLe;
+          } else if (LEXER_PEEK(&lexer) == '>') {
+            LEXER_NEXT(&lexer);
+            LEXER_NEXT(&lexer);
+            token.type = kPasTokenTypeNotEqual;
+          } else {
+            LEXER_NEXT(&lexer);
+            token.type = kPasTokenTypeLt;
+          }
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '=':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeEqual;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case ':':
+          if (LEXER_PEEK(&lexer) == '=') {
+            LEXER_NEXT(&lexer);
+            LEXER_NEXT(&lexer);
+            token.type = kPasTokenTypeAssign;
+          } else {
+            LEXER_NEXT(&lexer);
+            token.type = kPasTokenTypeColon;
+          }
+          token.text = LexerText(&lexer, &token);
+          break;
+        case ';':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeSemi;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case ',':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeComma;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '/':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeSlash;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '*':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeStar;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '+':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypePlus;
+          token.text = LexerText(&lexer, &token);
+          break;
+        case '-':
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeMinus;
+          token.text = LexerText(&lexer, &token);
+          break;
+        default:
+          LEXER_NEXT(&lexer);
+          break;
       }
     }
     VEC_PUSH(&tokens, token);
@@ -379,4 +376,8 @@ bool IsIdentifierPart(char c) {
 
 bool IsSign(char c) {
   return c == '+' || c == '-';
+}
+
+bool IsWhiteSpace(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
