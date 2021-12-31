@@ -7,3 +7,10 @@ project(
   DESCRIPTION "Parser for Pascal"
   HOMEPAGE_URL "https://github.com/Phytolizer/PasPar.git"
 )
+
+add_library(vec vec/src/vec.c)
+target_include_directories(vec PUBLIC vec/inc)
+
+add_library(pas pas/src/lex.c)
+target_include_directories(pas PUBLIC pas/inc)
+target_link_libraries(pas PUBLIC vec)
