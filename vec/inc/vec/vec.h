@@ -25,7 +25,13 @@ typedef struct {
       sizeof(*(V)->data),    \
   })
 
-#define VEC_FREE(V) free((V)->data)
+#define VEC_FREE(V)    \
+  do {                 \
+    free((V)->data);   \
+    (V)->data = NULL;  \
+    (V)->size = 0;     \
+    (V)->capacity = 0; \
+  } while (false)
 
 #define VEC_PUSH(V, Value) \
   (VecExpand(VEC_UNPACK(V)) ? ((V)->data[(V)->size++] = (Value), true) : false)
