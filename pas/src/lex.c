@@ -318,6 +318,18 @@ PasTokens PasLex(String text) {
           token.type = kPasTokenTypeMinus;
           token.text = LexerText(&lexer, &token);
           break;
+        case '\'':
+          LEXER_NEXT(&lexer);
+          while (LEXER_CUR(&lexer) != '\'' ||
+                 LEXER_CUR(&lexer) == '\'' && LEXER_PEEK(&lexer) == '\'') {
+            if (LEXER_CUR(&lexer) == '\0') {
+              break;
+            }
+            LEXER_NEXT(&lexer);
+          }
+          LEXER_NEXT(&lexer);
+          token.type = kPasTokenTypeStringLiteral;
+          token.text = LexerText(&lexer, &token);
         default:
           LEXER_NEXT(&lexer);
           break;
