@@ -19,7 +19,7 @@ int main(void) {
   PasTokens tokens = PasLex(source);
   VEC_FREE(&source);
   for (uint64_t i = 0; i < tokens.size; ++i) {
-    printf("%10s: %.*s\n", kPasTokenTypeNames[tokens.data[i].type],
+    printf("%20s: %.*s\n", kPasTokenTypeNames[tokens.data[i].type],
            (int)tokens.data[i].text.size, tokens.data[i].text.data);
   }
   for (uint64_t i = 0; i < tokens.size; ++i) {
