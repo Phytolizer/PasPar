@@ -96,6 +96,8 @@ typedef enum {
 #undef X
 } PasTokenType;
 
+extern const char* const kPasTokenTypeNames[];
+
 typedef struct {
   uint64_t line;
   uint64_t column;

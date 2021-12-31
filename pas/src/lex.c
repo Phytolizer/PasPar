@@ -4,12 +4,26 @@
 #include <stdint.h>
 #include <uthash.h>
 
+#include "pas/string.h"
+
+const char* const kPasTokenTypeNames[] = {
+#define X(x) #x,
+    PAS_TOKEN_TYPE_VARIANTS_
+#undef X
+};
+
 typedef struct {
   String text;
   uint64_t line;
   uint64_t column;
   uint64_t position;
 } Lexer;
+
+typedef struct {
+  String text;
+  PasTokenType type;
+  UT_hash_handle hh;
+} LexerKeyword;
 
 #define LEXER_LOOK(L, Offset)                 \
   ((L)->position + (Offset) >= (L)->text.size \
@@ -27,11 +41,11 @@ typedef struct {
     }                           \
     (L)->position++;            \
   } while (0)
-#define LEXER_TEXT(L)                                         \
-  StringMake((L)->text.data + (L)->position - token.position, \
-             (L)->text.data + (L)->position)
 
+static String LexerText(Lexer* lexer, PasToken* token);
 static void LexExponent(Lexer* lexer);
+static void AddKeyword(LexerKeyword** keywords, String text, PasTokenType type);
+static void CleanupKeywords(LexerKeyword* keywords);
 
 static bool IsIdentifierStart(char c);
 static bool IsDigit(char c);
@@ -45,6 +59,11 @@ PasTokens PasLex(String text) {
       .column = 1,
       .position = 0,
   };
+  LexerKeyword* keywords = NULL;
+  AddKeyword(&keywords, StringMakeC("and"), kPasTokenTypeAnd);
+  AddKeyword(&keywords, StringMakeC("array"), kPasTokenTypeArray);
+  AddKeyword(&keywords, StringMakeC("begin"), kPasTokenTypeBegin);
+  AddKeyword(&keywords, StringMakeC("boolean"), kPasTokenTypeBoolean);
   PasTokens tokens = {0};
   while (lexer.position < lexer.text.size) {
     PasToken token = {
@@ -59,7 +78,16 @@ PasTokens PasLex(String text) {
           LEXER_NEXT(&lexer);
         }
         token.type = kPasTokenTypeIdent;
-        token.text = LEXER_TEXT(&lexer);
+        token.text = LexerText(&lexer, &token);
+        String lookup_text = StringDuplicate(&token.text);
+        StringDowncase(&lookup_text);
+        VEC_PUSH(&lookup_text, '\0');
+        LexerKeyword* kw;
+        HASH_FIND_STR(keywords, lookup_text.data, kw);
+        VEC_FREE(&lookup_text);
+        if (kw != NULL) {
+          token.type = kw->type;
+        }
       } else if (IsDigit(LEXER_CUR(&lexer))) {
         while (IsDigit(LEXER_CUR(&lexer))) {
           LEXER_NEXT(&lexer);
@@ -77,7 +105,7 @@ PasTokens PasLex(String text) {
         } else {
           token.type = kPasTokenTypeNumInt;
         }
-        token.text = LEXER_TEXT(&lexer);
+        token.text = LexerText(&lexer, &token);
       } else {
         switch (LEXER_CUR(&lexer)) {
           case '{': {
@@ -99,11 +127,11 @@ PasTokens PasLex(String text) {
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeLCurly;
             }
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
           } break;
           case '}':
             token.type = kPasTokenTypeRCurly;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             LEXER_NEXT(&lexer);
             break;
           case '(':
@@ -122,11 +150,11 @@ PasTokens PasLex(String text) {
               LEXER_NEXT(&lexer);
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeLBracket2;
-              token.text = LEXER_TEXT(&lexer);
+              token.text = LexerText(&lexer, &token);
             } else {
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeLParen;
-              token.text = LEXER_TEXT(&lexer);
+              token.text = LexerText(&lexer, &token);
             }
             break;
           case ' ':
@@ -148,32 +176,32 @@ PasTokens PasLex(String text) {
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeDot;
             }
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '@':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeAt;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '^':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypePointer;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '[':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeLBracket;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case ']':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeRBracket;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case ')':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeRParen;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '>':
             if (LEXER_PEEK(&lexer) == '=') {
@@ -184,7 +212,7 @@ PasTokens PasLex(String text) {
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeGt;
             }
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '<':
             if (LEXER_PEEK(&lexer) == '=') {
@@ -199,12 +227,12 @@ PasTokens PasLex(String text) {
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeLt;
             }
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '=':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeEqual;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case ':':
             if (LEXER_PEEK(&lexer) == '=') {
@@ -215,37 +243,37 @@ PasTokens PasLex(String text) {
               LEXER_NEXT(&lexer);
               token.type = kPasTokenTypeColon;
             }
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case ';':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeSemi;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case ',':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeComma;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '/':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeSlash;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '*':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeStar;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '+':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypePlus;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           case '-':
             LEXER_NEXT(&lexer);
             token.type = kPasTokenTypeMinus;
-            token.text = LEXER_TEXT(&lexer);
+            token.text = LexerText(&lexer, &token);
             break;
           default:
             LEXER_NEXT(&lexer);
@@ -255,7 +283,13 @@ PasTokens PasLex(String text) {
     }
     VEC_PUSH(&tokens, token);
   }
+  CleanupKeywords(keywords);
   return tokens;
+}
+
+String LexerText(Lexer* lexer, PasToken* token) {
+  return StringMake(lexer->text.data + token->position,
+                    lexer->text.data + lexer->position);
 }
 
 void LexExponent(Lexer* lexer) {
@@ -265,6 +299,24 @@ void LexExponent(Lexer* lexer) {
   }
   while (IsDigit(LEXER_CUR(lexer))) {
     LEXER_NEXT(lexer);
+  }
+}
+
+void AddKeyword(LexerKeyword** keywords, String text, PasTokenType type) {
+  LexerKeyword* keyword = (LexerKeyword*)malloc(sizeof(LexerKeyword));
+  keyword->text = text;
+  keyword->type = type;
+  HASH_ADD_KEYPTR(hh, *keywords, keyword->text.data, keyword->text.size,
+                  keyword);
+}
+
+void CleanupKeywords(LexerKeyword* keywords) {
+  LexerKeyword* kw;
+  LexerKeyword* tmp;
+  HASH_ITER(hh, keywords, kw, tmp) {
+    HASH_DEL(keywords, kw);
+    VEC_FREE(&kw->text);
+    free(kw);
   }
 }
 

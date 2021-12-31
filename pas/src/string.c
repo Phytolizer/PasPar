@@ -21,3 +21,20 @@ String StringMakeC(const char* c) {
   }
   return s;
 }
+
+String StringDuplicate(const String* s) {
+  String dup = {0};
+  VEC_RESERVE(&dup, s->size);
+  for (uint64_t i = 0; i < s->size; i++) {
+    VEC_PUSH(&dup, s->data[i]);
+  }
+  return dup;
+}
+
+void StringDowncase(String* s) {
+  for (char* c = s->data; c < s->data + s->size; c++) {
+    if (*c >= 'A' && *c <= 'Z') {
+      *c += 'a' - 'A';
+    }
+  }
+}

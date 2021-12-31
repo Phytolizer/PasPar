@@ -14,6 +14,9 @@ target_include_directories(vec PUBLIC vec/inc)
 add_library(uthash INTERFACE)
 target_include_directories(uthash INTERFACE uthash/inc)
 
-add_library(pas pas/src/lex.c)
+add_library(pas pas/src/lex.c pas/src/string.c)
 target_include_directories(pas PUBLIC pas/inc)
 target_link_libraries(pas PUBLIC vec uthash)
+
+add_executable(paspar paspar/src/main.c)
+target_link_libraries(paspar PUBLIC pas)
