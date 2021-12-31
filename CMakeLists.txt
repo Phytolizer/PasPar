@@ -11,6 +11,9 @@ project(
 add_library(vec vec/src/vec.c)
 target_include_directories(vec PUBLIC vec/inc)
 
+add_library(uthash INTERFACE)
+target_include_directories(uthash INTERFACE uthash/inc)
+
 add_library(pas pas/src/lex.c)
 target_include_directories(pas PUBLIC pas/inc)
-target_link_libraries(pas PUBLIC vec)
+target_link_libraries(pas PUBLIC vec uthash)

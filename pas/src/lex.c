@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <uthash.h>
 
 typedef struct {
   String text;
