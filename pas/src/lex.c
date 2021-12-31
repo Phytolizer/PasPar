@@ -117,6 +117,7 @@ PasTokens PasLex(String text) {
     };
     // loop will handle comments and whitespace
     while (token.type == kPasTokenTypeZero) {
+      token.position = lexer.position;
       if (IsIdentifierStart(LEXER_CUR(&lexer))) {
         while (IsIdentifierPart(LEXER_CUR(&lexer))) {
           LEXER_NEXT(&lexer);
